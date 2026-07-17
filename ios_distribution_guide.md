@@ -1,6 +1,6 @@
-# iOS 游戏套壳打包、TrollStore 分发与 TestFlight 上架指南 🚀
+# iOS 游戏套壳打包、TrollStore 安全分发与 TestFlight 上架指南 🚀
 
-本指南详细记录了将 `kx.hdhive.com` H5 游戏打包为原生 iOS App 并在各渠道分发的完整操作步骤。
+本指南详细记录了将 `kx.hdhive.com` H5 游戏打包为原生 iOS App，并安全清除个人签名证书进行分发的完整操作步骤。
 
 ---
 
@@ -42,7 +42,7 @@ class ViewController: UIViewController, WKNavigationDelegate {
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         webView.navigationDelegate = self
         
-        // 4. 将 WebView 添加到当前主视图中
+        // 4. 将 WebView 添加 to 当前主视图中
         self.view.addSubview(webView)
         
         // 5. 载入游戏的官方网页地址
@@ -86,9 +86,14 @@ class ViewController: UIViewController, WKNavigationDelegate {
 
 ---
 
-## 📦 第二部分：打包为 TrollStore（巨魔）适用的 `.ipa` 文件
+## 📦 第二部分：打包为 TrollStore（巨魔）适用的安全 `.ipa` 裸包
 
-巨魔商店并不需要复杂的官方付费证书，它接受任何干净的 `.ipa` 安装包。我们利用“免证书极速打包法”：
+巨魔商店并不需要复杂的官方付费证书，它接受任何干净的 `.ipa` 安装包。出于隐私保护和账户安全考虑，分发前必须进行**脱签（去签名）**处理。
+
+> [!WARNING]
+> ### ⚠️ 自签证书隐私风险说明
+> 自签后的 `.ipa` 包内含有 `embedded.mobileprovision` 文件，此文件以明文记录了你的**真实姓名、Apple ID 邮箱和注册的手机设备号**。
+> 若直接将带签名的包发给他人，会导致隐私全面泄露，且如果多人在未授权设备上强行载入该证书，可能引发苹果风控机制对你的 Apple ID 进行**永久封禁**！
 
 ### 1. 编译 App 文件
 1.  在 Xcode 顶部设备栏，切换设备为 **`Any iOS Device (arm64)`**。
@@ -97,12 +102,28 @@ class ViewController: UIViewController, WKNavigationDelegate {
 4.  在弹出的 Finder 文件夹中，进入：`Build` -> `Products` -> `Debug-iphoneos` 目录。
 5.  你会看到一个带有小飞人图标的文件夹：**`kx-game-ios.app`**。
 
-### 2. 制作 `.ipa`
+### 2. 制作 `.ipa` 包
 1.  在桌面上新建一个名为 **`Payload`** 的文件夹（**注意：首字母 `P` 必须大写**）。
 2.  把编译出来的 **`kx-game-ios.app`** 复制，粘贴进 **`Payload`** 文件夹中。
 3.  右键点击这个 **`Payload`** 文件夹，选择 **“压缩 Payload”（Compress "Payload"）**。
 4.  将生成的压缩包 **`Payload.zip`**，重命名为 **`江湖大侠.ipa`**。
-5.  把这个 `.ipa` 发送给巨魔用户，使用 TrollStore 打开即可永久免费使用！
+
+### 3. 一键脱签与隐私擦除（核心步骤 🌟）
+在 Mac 终端中进入生成的 `江湖大侠.ipa` 所在的文件夹，执行以下指令，从 ZIP 架构中直接强行剥离你的签名数据和个人描述文件：
+```bash
+zip -d 江湖大侠.ipa "Payload/*.app/embedded.mobileprovision" "Payload/*.app/_CodeSignature/*" "Payload/*.app/_CodeSignature"
+```
+终端会输出 `deleting: ...` 的提示。此操作完成后，该包即成为 100% 匿名、安全的**“无签裸包”**，任何人均可使用巨魔商店直接安装，且无任何隐私痕迹。
+
+### 4. 无法安装巨魔用户的本地自签方案（爱思助手）
+如果接收包的用户设备无法安装巨魔商店，请引导他们使用自己的电脑和自己的 Apple ID 账户通过**爱思助手**进行安全自签：
+1.  在 Windows 电脑上打开 **爱思助手**，连接 iPhone 至电脑。
+2.  点击 **`工具箱`** -> 选择 **`IPA 签名`**。
+3.  导入你分享给他的无签名 `江湖大侠.ipa` 裸包。
+4.  勾选 **`使用 Apple ID 签名`** -> 点击 **`添加 Apple ID`**，输入**他自己的 Apple ID 账号与密码**。
+5.  选中他的账号，点击 **`开始签名`**。
+6.  签名完成后，直接在列表中点击 **`安装`** 刷入手机。
+7.  首次打开，需在手机的 **“设置 -> 通用 -> VPN 与设备管理”** 中信任他本人的账号。
 
 ---
 
