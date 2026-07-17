@@ -21,20 +21,33 @@ class ViewController: UIViewController, WKNavigationDelegate {
         let webConfiguration = WKWebViewConfiguration()
         webConfiguration.allowsInlineMediaPlayback = true // 允许网页内播放视频(广告)
         
-        // 注入 AJAX/Fetch 拦截自愈脚本：专门检测关键 JSON 配置文件因网络阻断而加载失败的情况
+        // 注入防御与拦截自愈脚本：
+        // 包含原型链防护罩（防止 updateData 未定义时报错上报死循环）和 AJAX/Fetch 拦截重试
         let hijackJS = """
         (function() {
+            // 🛡️ 原型链防护罩：防止 PlatformAPI.updateData 未定义时读取 exceptionUrl 触发 window.onerror 套娃死循环
+            try {
+                Object.defineProperty(Object.prototype, 'updateData', {
+                    value: { exceptionUrl: '', buyQuantity: [], images: [], selectBins: [] },
+                    writable: true,
+                    configurable: true
+                });
+                console.log('【外壳注入】原型链防护罩部署成功。');
+            } catch (e) {
+                console.error('【外壳注入】原型链防护罩部署失败:', e);
+            }
+
             var isReloading = false;
             function triggerSelfHealing() {
                 if (isReloading) return;
                 isReloading = true;
-                console.log('【外壳注入】关键配置文件加载失败，3秒后自动尝试重新热重载...');
+                console.log('【外壳注入】关键资源加载失败，3秒后自动尝试重新热重载...');
                 setTimeout(function() {
                     window.location.reload();
                 }, 3000);
             }
             
-            // 1. 劫持并监听 XMLHttpRequest (Cocos 2.x/3.x 常用)
+            // 1. 劫持并监听 XMLHttpRequest
             var oldOpen = XMLHttpRequest.prototype.open;
             XMLHttpRequest.prototype.open = function(method, url) {
                 this.addEventListener('error', function() {
@@ -45,7 +58,7 @@ class ViewController: UIViewController, WKNavigationDelegate {
                 oldOpen.apply(this, arguments);
             };
             
-            // 2. 劫持并监听 Fetch (现代浏览器及 CDN 常用)
+            // 2. 劫持并监听 Fetch
             var oldFetch = window.fetch;
             if (oldFetch) {
                 window.fetch = function(input, init) {
