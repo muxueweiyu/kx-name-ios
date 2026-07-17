@@ -1,0 +1,25 @@
+# ==========================================
+# 江湖大侠 iOS 项目 Git 忽略配置 (.gitignore)
+# ==========================================
+
+# macOS 系统缓存
+.DS_Store
+Thumbs.db
+
+# Xcode 编译与用户配置忽略
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdata
+xcuserdata/
+**/xcuserdata/
+**/project.xcworkspace/
+**/NoSuchFile
+
+# 打包生成的安装包产物（通过 Releases 挂载，不进代码库历史）
+*.ipa
+build-output/
+
+# 临时日志与缓存
+*.log
+.temp/
