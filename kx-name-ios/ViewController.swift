@@ -69,6 +69,21 @@ class ViewController: UIViewController, WKNavigationDelegate {
         }
     }
     
+    // 10. 处理网页加载失败（如首次启动网络权限弹窗导致的安全阻断）
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        print("【网络监控】网页初步加载失败: \(error.localizedDescription)，3秒后自动尝试重新连接...")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            self?.webView.load(URLRequest(url: URL(string: "http://kx.hdhive.com/")!))
+        }
+    }
+    
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        print("【网络监控】网页渲染加载失败: \(error.localizedDescription)，3秒后自动尝试重新连接...")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            self?.webView.load(URLRequest(url: URL(string: "http://kx.hdhive.com/")!))
+        }
+    }
+    
     deinit {
         watchdogTimer?.invalidate()
     }
