@@ -10,6 +10,7 @@ import WebKit
 
 class ViewController: UIViewController, WKNavigationDelegate {
     var webView: WKWebView!
+    var watchdogTimer: Timer?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -34,10 +35,41 @@ class ViewController: UIViewController, WKNavigationDelegate {
             let request = URLRequest(url: url)
             webView.load(request)
         }
+        
+        // 6. 开启冷启动卡死监控定时器 (8秒超时自动重载)
+        startWatchdogTimer()
     }
     
-    // 6. 隐藏顶部状态栏（电量、时间），实现完全沉浸式游戏画面
+    // 7. 隐藏顶部状态栏（电量、时间），实现完全沉浸式游戏画面
     override var prefersStatusBarHidden: Bool {
         return true
+    }
+    
+    // 8. 开启看门狗定时器
+    private func startWatchdogTimer() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: false) { [weak self] _ in
+            self?.checkGameLoadingStatus()
+        }
+    }
+    
+    // 9. 校验游戏加载状态，如果死锁则重载
+    private func checkGameLoadingStatus() {
+        // 通过 JS 检查 Cocos Creator 引擎是否成功运行且场景正常载入
+        webView.evaluateJavaScript("window.cc !== undefined && window.cc.director !== undefined && window.cc.director.getScene() !== null") { [weak self] (result, error) in
+            guard let self = self else { return }
+            if let isLoaded = result as? Bool, isLoaded {
+                print("【自检监控】Cocos 引擎已成功运行，解除看门狗。")
+            } else {
+                print("【自检监控】检测到冷启动死锁或载入超时，正在强行执行网页热重载...")
+                self.webView.reload()
+                // 重新启动一轮定时器，防止连续卡死
+                self.startWatchdogTimer()
+            }
+        }
+    }
+    
+    deinit {
+        watchdogTimer?.invalidate()
     }
 }
