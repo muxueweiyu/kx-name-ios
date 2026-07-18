@@ -163,64 +163,27 @@ class ViewController: UIViewController, WKNavigationDelegate {
         }
     }
     
-    // 动态生成一个包含 WAV 头部和 1秒 零数据 PCM 的 Data 缓存
+    // 动态生成一个包含 WAV 头部和 1秒 零数据 PCM 的 Data 缓存 (静态常量数组，避免 Swift 数组切片类型赋值报错)
     private func createSilentWAVHeaderAndPCM() -> Data {
-        let sampleRate: Int32 = 8000
-        let channels: Int16 = 1
-        let bitsPerSample: Int16 = 16
-        let duration: Int = 1 // 1秒无声
-        
-        let pcmDataSize = Int(sampleRate) * Int(channels) * (Int(bitsPerSample) / 8) * duration
-        let headerSize = 44
-        var header = [UInt8](repeating: 0, count: headerSize)
-        
-        // RIFF header
-        header[0...3] = Array("RIFF".utf8)
-        let fileSize = Int32(pcmDataSize + headerSize - 8)
-        let fileSizeArray = withUnsafeBytes(of: fileSize) { Array($0) }
-        header[4...7] = fileSizeArray[0...3]
-        header[8...11] = Array("WAVE".utf8)
-        
-        // fmt chunk
-        header[12...15] = Array("fmt ".utf8)
-        let subchunk1Size: Int32 = 16
-        let subchunk1SizeArray = withUnsafeBytes(of: subchunk1Size) { Array($0) }
-        header[16...19] = subchunk1SizeArray[0...3]
-        
-        let audioFormat: Int16 = 1 // PCM
-        let audioFormatArray = withUnsafeBytes(of: audioFormat) { Array($0) }
-        header[20...21] = audioFormatArray[0...1]
-        
-        let channelsArray = withUnsafeBytes(of: channels) { Array($0) }
-        header[22...23] = channelsArray[0...1]
-        
-        let sampleRateArray = withUnsafeBytes(of: sampleRate) { Array($0) }
-        header[24...27] = sampleRateArray[0...3]
-        
-        let byteRate = sampleRate * Int32(channels) * Int32(bitsPerSample / 8)
-        let byteRateArray = withUnsafeBytes(of: byteRate) { Array($0) }
-        header[28...31] = byteRateArray[0...3]
-        
-        let blockAlign = channels * (bitsPerSample / 8)
-        let blockAlignArray = withUnsafeBytes(of: blockAlign) { Array($0) }
-        header[32...33] = blockAlignArray[0...1]
-        
-        let bitsPerSampleArray = withUnsafeBytes(of: bitsPerSample) { Array($0) }
-        header[34...35] = bitsPerSampleArray[0...1]
-        
-        // data chunk
-        header[36...39] = Array("data".utf8)
-        let pcmDataSizeInt32 = Int32(pcmDataSize)
-        let pcmDataSizeArray = withUnsafeBytes(of: pcmDataSizeInt32) { Array($0) }
-        header[40...43] = pcmDataSizeArray[0...3]
-        
+        let header: [UInt8] = [
+            0x52, 0x49, 0x46, 0x46, // "RIFF"
+            0xA4, 0x3E, 0x00, 0x00, // ChunkSize (16036)
+            0x57, 0x41, 0x56, 0x45, // "WAVE"
+            0x66, 0x6D, 0x74, 0x20, // "fmt "
+            0x10, 0x00, 0x00, 0x00, // Subchunk1Size (16)
+            0x01, 0x00,             // AudioFormat (1)
+            0x01, 0x00,             // NumChannels (1)
+            0x40, 0x1F, 0x00, 0x00, // SampleRate (8000)
+            0x80, 0x3E, 0x00, 0x00, // ByteRate (16000)
+            0x02, 0x00,             // BlockAlign (2)
+            0x10, 0x00,             // BitsPerSample (16)
+            0x64, 0x61, 0x74, 0x61, // "data"
+            0x80, 0x3E, 0x00, 0x00  // Subchunk2Size (16000)
+        ]
         var wavData = Data(header)
-        // 填充 1秒 的无声零数据
-        let zeroSamples = [Int16](repeating: 0, count: pcmDataSize / 2)
-        zeroSamples.withUnsafeBytes {
-            wavData.append($0)
-        }
-        
+        let pcmDataSize = 16000 // 8000 采样率 * 2 字节(16位) * 1 秒
+        let zeroSamples = [UInt8](repeating: 0, count: pcmDataSize)
+        wavData.append(contentsOf: zeroSamples)
         return wavData
     }
 }
