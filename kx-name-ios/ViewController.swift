@@ -13,6 +13,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
     var webView: WKWebView!
     var audioPlayer: AVAudioPlayer?
     var backgroundTimer: Timer?
+    var forgeButton: UIButton!
+    var isForging = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -60,24 +62,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                 console.error('【外壳注入】高级原型链防护罩部署失败:', e);
             }
 
-            // 1. 网页 HTML5 Audio 挂活源：监听首次触碰激活，使 WebContent 进程免于后台挂起
-            function enableWebAudioBackgroundKeepAlive() {
-                try {
-                    var audio = new Audio();
-                    audio.src = "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGFtZTMuOTguMgAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAABYaW5nAAAADwAAAAwAAA0AAVdXV1dXV1dXV1dXV1f///////8AAAA5TEFNRTMuOTguMlVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zhAMAAAAAAAAAAAAAAGgAAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OEAMAAAAAAAAAAAAAAGgAAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
-                    audio.loop = true;
-                    audio.volume = 0.0001; // 极微弱音量
-                    audio.play().then(function() {
-                        console.log('【网页挂活】HTML5 Audio 极简静音音频循环播放成功！');
-                    }).catch(function(e) {
-                        console.error('【网页挂活】HTML5 Audio 播放失败:', e);
-                    });
-                } catch(e) {
-                    console.error('【网页挂活】HTML5 Audio 初始化失败:', e);
-                }
-            }
-            window.addEventListener('touchstart', enableWebAudioBackgroundKeepAlive, { once: true, capture: true });
-            window.addEventListener('click', enableWebAudioBackgroundKeepAlive, { once: true, capture: true });
+
 
             // 2. 日志拦截器：将 console 日志实时投递给宿主 App (Xcode 终端)，确保锁屏时可见
             var oldLog = console.log;
@@ -173,6 +158,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
             let request = URLRequest(url: url)
             webView.load(request)
         }
+        
+        // 7.5. 初始化悬浮智能挂机按钮
+        setupFloatingControl()
     }
     
     // 8. 隐藏状态栏
@@ -253,5 +241,81 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         let zeroSamples = [UInt8](repeating: 0, count: pcmDataSize)
         wavData.append(contentsOf: zeroSamples)
         return wavData
+    }
+    
+    // 13. 初始化悬浮智能控制台按钮
+    private func setupFloatingControl() {
+        let button = UIButton(type: .custom)
+        button.frame = CGRect(x: self.view.bounds.width - 160, y: 60, width: 140, height: 40)
+        button.autoresizingMask = [.flexibleLeftMargin, .flexibleBottomMargin]
+        
+        button.setTitle("智能开箱: 关", for: .normal)
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .bold)
+        button.setTitleColor(.white, for: .normal)
+        button.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        button.layer.cornerRadius = 20
+        button.layer.borderWidth = 1.5
+        button.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
+        
+        let blurEffect = UIBlurEffect(style: .dark)
+        let blurView = UIVisualEffectView(effect: blurEffect)
+        blurView.frame = button.bounds
+        blurView.layer.cornerRadius = 20
+        blurView.clipsToBounds = true
+        blurView.isUserInteractionEnabled = false
+        button.insertSubview(blurView, at: 0)
+        
+        button.addTarget(self, action: #selector(toggleForge), for: .touchUpInside)
+        
+        self.view.addSubview(button)
+        self.forgeButton = button
+    }
+    
+    @objc private func toggleForge() {
+        isForging = !isForging
+        if isForging {
+            webView.evaluateJavaScript("window.batchSmartForge(6)") { [weak self] (result, error) in
+                if let error = error {
+                    print("【外壳控制】启动智能开箱失败: \(error.localizedDescription)")
+                    self?.isForging = false
+                } else {
+                    print("【外壳控制】已开启智能开箱。")
+                    self?.forgeButton.setTitle("智能开箱: 开 🟢", for: .normal)
+                    self?.forgeButton.layer.borderColor = UIColor.green.cgColor
+                }
+            }
+        } else {
+            webView.evaluateJavaScript("window.stopBatchForge()") { [weak self] (result, error) in
+                if let error = error {
+                    print("【外壳控制】停止智能开箱失败: \(error.localizedDescription)")
+                } else {
+                    print("【外壳控制】已停止智能开箱。")
+                }
+                self?.forgeButton.setTitle("智能开箱: 关", for: .normal)
+                self?.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
+            }
+        }
+    }
+
+    // 14. 网页加载完成代理：自动从 App Bundle 读取并注入 hacker_init.js 挂机代码
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        print("【网页加载】游戏主页加载完成，正在检索并注入 hacker_init.js...")
+        
+        if let filepath = Bundle.main.path(forResource: "hacker_init", ofType: "js"),
+           let jsContent = try? String(contentsOfFile: filepath, encoding: .utf8) {
+            
+            webView.evaluateJavaScript(jsContent) { [weak self] (result, error) in
+                if let error = error {
+                    print("【网页加载】hacker_init.js 注入失败: \(error.localizedDescription)")
+                } else {
+                    print("【网页加载】hacker_init.js 注入成功！")
+                }
+                self?.isForging = false
+                self?.forgeButton.setTitle("智能开箱: 关", for: .normal)
+                self?.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
+            }
+        } else {
+            print("⚠️【网页加载】未能在 Bundle 中找到 hacker_init.js 文件！请确保已将 hacker_init.js 拖入 Xcode 导航栏并勾选 Target Membership。")
+        }
     }
 }
