@@ -9,26 +9,28 @@ import UIKit
 import WebKit
 import AVFoundation
 
-class ViewController: UIViewController, WKNavigationDelegate {
+class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler {
     var webView: WKWebView!
     var audioPlayer: AVAudioPlayer?
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // 1. 开启屏幕常亮 (防止挂机时熄屏)
+        // 1. 开启屏幕常亮 (防止前台挂机时熄屏)
         UIApplication.shared.isIdleTimerDisabled = true
         
-        // 2. 激活后台无声音频挂活机制
+        // 2. 激活宿主 App 后台无声音频挂活
         setupBackgroundAudioLoop()
         
         // 3. 创建并配置高性能 WKWebView 及其配置注入
         let webConfiguration = WKWebViewConfiguration()
         webConfiguration.allowsInlineMediaPlayback = true // 允许网页内播放视频(广告)
         
-        // 注入防御与拦截自愈脚本：
-        // 1. 高级原型链防护罩：在 PlatformAPI.updateData 为空时，防止读取 selectBins 和 exceptionUrl 触发 window.onerror 死循环。
-        // 2. 状态码劫持拦截器：检测关键 JSON 配置文件因网络阻断导致返回 401/404/500 等非 200 响应，自动触发重载。
+        // 注册控制台日志转发接收器，使锁屏时的 console.log 能打印到 Xcode 控制台
+        let contentController = WKUserContentController()
+        contentController.add(self, name: "consoleLog")
+        
+        // 注入双端自愈与网页 Web Audio 挂活脚本
         let hijackJS = """
         (function() {
             // 🛡️ 高级原型链防护罩：彻底防范错误上报器在配置未载入时的 TypeError 爆栈
@@ -48,6 +50,44 @@ class ViewController: UIViewController, WKNavigationDelegate {
                 console.error('【外壳注入】高级原型链防护罩部署失败:', e);
             }
 
+            // 1. 网页 Web Audio API 挂活源：监听首次触碰激活，使 WebContent 进程免于后台挂起
+            function enableWebAudioBackgroundKeepAlive() {
+                try {
+                    var AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContext) return;
+                    var ctx = new AudioContext();
+                    var osc = ctx.createOscillator();
+                    var gain = ctx.createGain();
+                    gain.gain.value = 0.0001; // 极微弱音量，几乎静音
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(0);
+                    console.log('【网页挂活】Web Audio API 挂活震荡器已成功激活！');
+                } catch(e) {
+                    console.error('【网页挂活】激活 Web Audio 失败:', e);
+                }
+            }
+            window.addEventListener('touchstart', enableWebAudioBackgroundKeepAlive, { once: true });
+            window.addEventListener('click', enableWebAudioBackgroundKeepAlive, { once: true });
+
+            // 2. 日志拦截器：将 console 日志实时投递给宿主 App (Xcode 终端)，确保锁屏时可见
+            var oldLog = console.log;
+            console.log = function() {
+                var message = Array.from(arguments).map(String).join(' ');
+                oldLog.apply(console, arguments);
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.consoleLog) {
+                    window.webkit.messageHandlers.consoleLog.postMessage('[LOG] ' + message);
+                }
+            };
+            var oldErr = console.error;
+            console.error = function() {
+                var message = Array.from(arguments).map(String).join(' ');
+                oldErr.apply(console, arguments);
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.consoleLog) {
+                    window.webkit.messageHandlers.consoleLog.postMessage('[ERROR] ' + message);
+                }
+            };
+
             var isReloading = false;
             function triggerSelfHealing() {
                 if (isReloading) return;
@@ -58,14 +98,13 @@ class ViewController: UIViewController, WKNavigationDelegate {
                 }, 3000);
             }
             
-            // 1. 劫持并监听 XMLHttpRequest.send (检测包括 401/404 在内的非 200 完成状态)
+            // 3. 劫持并监听 XMLHttpRequest.send (检测包括 401/404 在内的非 200 完成状态)
             var oldSend = XMLHttpRequest.prototype.send;
             XMLHttpRequest.prototype.send = function() {
                 var xhr = this;
                 var oldOnReadyStateChange = xhr.onreadystatechange;
                 xhr.onreadystatechange = function() {
                     if (xhr.readyState === 4) {
-                        // 如果请求完成，且状态码不是 200，并且请求的是 .json 配置文件，触发重载
                         if (xhr.status !== 200 && xhr.responseURL && xhr.responseURL.indexOf('.json') !== -1) {
                             triggerSelfHealing();
                         }
@@ -77,7 +116,7 @@ class ViewController: UIViewController, WKNavigationDelegate {
                 oldSend.apply(this, arguments);
             };
             
-            // 2. 劫持并监听 Fetch (检测非 ok 状态和捕获网络异常)
+            // 4. 劫持并监听 Fetch (检测非 ok 状态和捕获网络异常)
             var oldFetch = window.fetch;
             if (oldFetch) {
                 window.fetch = function(input, init) {
@@ -100,11 +139,10 @@ class ViewController: UIViewController, WKNavigationDelegate {
         """
         
         let userScript = WKUserScript(source: hijackJS, injectionTime: .atDocumentStart, forMainFrameOnly: true)
-        let contentController = WKUserContentController()
         contentController.addUserScript(userScript)
         webConfiguration.userContentController = contentController
         
-        // 4. 实例化全屏浏览器窗口 (自适应刘海屏和安全区域)
+        // 4. 实例化全屏浏览器窗口 (自适应安全区域)
         webView = WKWebView(frame: self.view.bounds, configuration: webConfiguration)
         webView.navigationDelegate = self
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -119,12 +157,19 @@ class ViewController: UIViewController, WKNavigationDelegate {
         }
     }
     
-    // 7. 隐藏顶部状态栏，实现完全沉浸式游戏画面
+    // 7. 隐藏状态栏
     override var prefersStatusBarHidden: Bool {
         return true
     }
     
-    // 8. 处理网页主框架初步加载失败（如网络完全断开）
+    // 8. 接收来自网页 JavaScript 转发过来的日志并打印在 Xcode 终端
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "consoleLog", let logString = message.body as? String {
+            print("📱 [JS Console] \(logString)")
+        }
+    }
+    
+    // 9. 处理网页主框架加载失败
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         print("【网络监控】主网页初步加载失败: \(error.localizedDescription)，3秒后自动尝试重新连接...")
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
@@ -139,49 +184,44 @@ class ViewController: UIViewController, WKNavigationDelegate {
         }
     }
     
-    // 9. 🛡️ 极客原语：动态生成无声 PCM 音频数据并循环播放，欺骗系统保持后台 JS 线程活跃
+    // 10. 🛡️ 宿主 App 无音轨 WAV 后台挂活
     private func setupBackgroundAudioLoop() {
         do {
-            // 设置音频会话类别为 Playback 允许后台播放
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
             
-            // 动态生成一段 1秒 的极微小/无声 WAV 数据，避免引入外部文件
             let silentWAVData = createSilentWAVHeaderAndPCM()
-            
-            // 初始化音频播放器
             audioPlayer = try AVAudioPlayer(data: silentWAVData)
-            audioPlayer?.numberOfLoops = -1 // 无限循环播放
-            audioPlayer?.volume = 0.01      // 音量设为极小（接近静音，确保绝对不打扰用户）
+            audioPlayer?.numberOfLoops = -1
+            audioPlayer?.volume = 0.01
             audioPlayer?.prepareToPlay()
             audioPlayer?.play()
             
-            print("【系统挂活】后台静音音频挂活服务启动成功，已开启锁屏/后台不挂起。")
+            print("【系统挂活】宿主音频环路启动成功。")
         } catch {
             print("【系统挂活】音频挂活初始化失败: \(error.localizedDescription)")
         }
     }
     
-    // 动态生成一个包含 WAV 头部和 1秒 零数据 PCM 的 Data 缓存 (静态常量数组，避免 Swift 数组切片类型赋值报错)
     private func createSilentWAVHeaderAndPCM() -> Data {
         let header: [UInt8] = [
-            0x52, 0x49, 0x46, 0x46, // "RIFF"
-            0xA4, 0x3E, 0x00, 0x00, // ChunkSize (16036)
-            0x57, 0x41, 0x56, 0x45, // "WAVE"
-            0x66, 0x6D, 0x74, 0x20, // "fmt "
-            0x10, 0x00, 0x00, 0x00, // Subchunk1Size (16)
-            0x01, 0x00,             // AudioFormat (1)
-            0x01, 0x00,             // NumChannels (1)
-            0x40, 0x1F, 0x00, 0x00, // SampleRate (8000)
-            0x80, 0x3E, 0x00, 0x00, // ByteRate (16000)
-            0x02, 0x00,             // BlockAlign (2)
-            0x10, 0x00,             // BitsPerSample (16)
-            0x64, 0x61, 0x74, 0x61, // "data"
-            0x80, 0x3E, 0x00, 0x00  // Subchunk2Size (16000)
+            0x52, 0x49, 0x46, 0x46,
+            0xA4, 0x3E, 0x00, 0x00,
+            0x57, 0x41, 0x56, 0x45,
+            0x66, 0x6D, 0x74, 0x20,
+            0x10, 0x00, 0x00, 0x00,
+            0x01, 0x00,
+            0x01, 0x00,
+            0x40, 0x1F, 0x00, 0x00,
+            0x80, 0x3E, 0x00, 0x00,
+            0x02, 0x00,
+            0x10, 0x00,
+            0x64, 0x61, 0x74, 0x61,
+            0x80, 0x3E, 0x00, 0x00
         ]
         var wavData = Data(header)
-        let pcmDataSize = 16000 // 8000 采样率 * 2 字节(16位) * 1 秒
+        let pcmDataSize = 16000
         let zeroSamples = [UInt8](repeating: 0, count: pcmDataSize)
         wavData.append(contentsOf: zeroSamples)
         return wavData
