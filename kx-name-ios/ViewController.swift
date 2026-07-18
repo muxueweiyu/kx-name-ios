@@ -30,6 +30,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         let webConfiguration = WKWebViewConfiguration()
         webConfiguration.allowsInlineMediaPlayback = true // 允许网页内播放视频(广告)
         
+        // 苹果私有 API：安全探测并强行开启配置的 ForegroundPriority 属性，强制 WebKit 保持前台计算优先级
+        if webConfiguration.responds(to: Selector(("alwaysRunsAtForegroundPriority"))) {
+            webConfiguration.setValue(true, forKey: "alwaysRunsAtForegroundPriority")
+            print("【系统挂活】成功激活 webConfiguration 级别的前台优先级。")
+        }
+        
         // 注册控制台日志转发接收器，使锁屏时的 console.log 能打印到 Xcode 控制台
         let contentController = WKUserContentController()
         contentController.add(self, name: "consoleLog")
@@ -58,7 +64,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
             function enableWebAudioBackgroundKeepAlive() {
                 try {
                     var audio = new Audio();
-                    audio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA";
+                    audio.src = "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGFtZTMuOTguMgAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAABYaW5nAAAADwAAAAwAAA0AAVdXV1dXV1dXV1dXV1f///////8AAAA5TEFNRTMuOTguMlVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zhAMAAAAAAAAAAAAAAGgAAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OEAMAAAAAAAAAAAAAAGgAAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
                     audio.loop = true;
                     audio.volume = 0.0001; // 极微弱音量
                     audio.play().then(function() {
@@ -149,6 +155,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         webView = WKWebView(frame: self.view.bounds, configuration: webConfiguration)
         webView.navigationDelegate = self
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        
+        // 苹果私有 API：安全探测并强行开启 webView 级别的前台优先级，防止后台被降频暂停
+        if webView.responds(to: Selector(("_alwaysRunsAtForegroundPriority"))) {
+            webView.setValue(true, forKey: "_alwaysRunsAtForegroundPriority")
+            print("【系统挂活】成功激活 webView _alwaysRunsAtForegroundPriority。")
+        } else if webView.responds(to: Selector(("alwaysRunsAtForegroundPriority"))) {
+            webView.setValue(true, forKey: "alwaysRunsAtForegroundPriority")
+            print("【系统挂活】成功激活 webView alwaysRunsAtForegroundPriority。")
+        }
         
         // 6. 将浏览器加入界面
         self.view.addSubview(webView)
