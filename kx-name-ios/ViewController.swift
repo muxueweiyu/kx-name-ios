@@ -358,7 +358,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
     }
     
     private func executeStartForge() {
-        webView.evaluateJavaScript("window.batchSmartForge(10)") { [weak self] (result, error) in
+        webView.evaluateJavaScript("window.batchSmartForge(1)") { [weak self] (result, error) in
             guard let self = self else { return }
             if let error = error {
                 print("【外壳控制】启动智能开箱失败: \(error.localizedDescription)")

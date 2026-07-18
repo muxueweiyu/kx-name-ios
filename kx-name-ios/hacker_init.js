@@ -19,7 +19,7 @@
         // 2. 状态锁定义
         window.isForgePending = false;
         window.isBatchForgeActive = false;
-        window.lastForgeCount = 10;
+        window.lastForgeCount = 1;
         window.batchForgeTimer = null;
 
         // 3. 核心智能开箱逻辑
@@ -41,8 +41,74 @@
                 return;
             }
             
-            // 动态决定本次开箱数量：如果有 3 点体力，就只开 3 个，最多开 10 个
-            var targetCount = batchCount || 10;
+            // 动态决定本次开箱数量：如果有 3 点体力，就只开 3 个，最多开 1 个
+            var targetCount = batchCount || 1;
+            
+            // 🛡️ 3.1.5. 健壮自愈检测：判断当前待定装备区是否有上一次断线、闪退或执行中断残留的装备
+            var pendingEquips = (gd.fullInfo && gd.fullInfo.forgeEquips) || [];
+            if (pendingEquips.length > 0) {
+                console.warn("⚠️【防卡死自愈】检测到待定区有 " + pendingEquips.length + " 件残留装备，正在优先执行智能穿戴/分解结算...");
+                
+                var toAttachPending = {};
+                var toBreakdownPending = [];
+                
+                for (var i = 0; i < pendingEquips.length; i++) {
+                    var eq = pendingEquips[i];
+                    var diff = eq.diffCombatPower || 0;
+                    if (diff > 0) {
+                        var slot = eq.slot;
+                        if (!toAttachPending[slot] || toAttachPending[slot].diffCombatPower < diff) {
+                            if (toAttachPending[slot]) {
+                                toBreakdownPending.push(toAttachPending[slot].eid);
+                            }
+                            toAttachPending[slot] = eq;
+                        } else {
+                            toBreakdownPending.push(eq.eid);
+                        }
+                    } else {
+                        toBreakdownPending.push(eq.eid);
+                    }
+                }
+                
+                var preTasks = [];
+                Object.keys(toAttachPending).forEach(function(slot) {
+                    var eq = toAttachPending[slot];
+                    preTasks.push(function(next) {
+                        if (!window.isBatchForgeActive) return next();
+                        console.log("[自愈穿戴] 穿戴部位 " + slot + " (战力+" + eq.diffCombatPower + ")...");
+                        gs.send(function() { next(); }, "attachEquip", { breakdown: 1, equipId: eq.eid });
+                    });
+                });
+                
+                if (toBreakdownPending.length > 0) {
+                    preTasks.push(function(next) {
+                        if (!window.isBatchForgeActive) return next();
+                        console.log("[自愈分解] 清空 " + toBreakdownPending.length + " 件残留装备...");
+                        gs.send(function() { next(); }, "breakdown", { equipIds: toBreakdownPending });
+                    });
+                }
+                
+                var preTaskIndex = 0;
+                function runNextPreTask() {
+                    if (!window.isBatchForgeActive) {
+                        window.isForgePending = false;
+                        return;
+                    }
+                    if (preTaskIndex >= preTasks.length) {
+                        // 清理完成，释放锁，并在 400ms 后重新拉起正式开箱
+                        window.isForgePending = false;
+                        window.batchForgeTimer = setTimeout(function() {
+                            window.batchSmartForge(window.lastForgeCount);
+                        }, 400);
+                        return;
+                    }
+                    var task = preTasks[preTaskIndex++];
+                    task(runNextPreTask);
+                }
+                
+                runNextPreTask();
+                return; // 拦截本次开箱，等清理干净后再开！
+            }
             var count = Math.min(currentStamina, targetCount);
             window.lastForgeCount = targetCount;
             
