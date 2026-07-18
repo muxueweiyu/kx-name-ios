@@ -67,8 +67,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                     console.error('【网页挂活】激活 Web Audio 失败:', e);
                 }
             }
-            window.addEventListener('touchstart', enableWebAudioBackgroundKeepAlive, { once: true });
-            window.addEventListener('click', enableWebAudioBackgroundKeepAlive, { once: true });
+            window.addEventListener('touchstart', enableWebAudioBackgroundKeepAlive, { once: true, capture: true });
+            window.addEventListener('click', enableWebAudioBackgroundKeepAlive, { once: true, capture: true });
 
             // 2. 日志拦截器：将 console 日志实时投递给宿主 App (Xcode 终端)，确保锁屏时可见
             var oldLog = console.log;
