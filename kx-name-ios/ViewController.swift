@@ -244,7 +244,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                             button.isHidden = false
                             button.alpha = 0.0
                             UIView.animate(withDuration: 0.4) {
-                                button.alpha = 1.0
+                                button.alpha = self.isForging ? 0.8 : 0.5
                             }
                         }
                     } else {
@@ -288,21 +288,24 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
     // 13. 初始化悬浮智能控制台按钮
     private func setupFloatingControl() {
         let button = UIButton(type: .custom)
-        button.frame = CGRect(x: self.view.bounds.width - 160, y: 60, width: 140, height: 40)
+        // 🚀 大幅缩小尺寸：宽 95，高 30
+        button.frame = CGRect(x: self.view.bounds.width - 115, y: 60, width: 95, height: 30)
         button.autoresizingMask = [.flexibleLeftMargin, .flexibleBottomMargin]
         
-        button.setTitle("后台钓鱼: 关", for: .normal)
-        button.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .bold)
+        // 🚀 文字精简为“钓鱼: 关”以适应小尺寸，字体缩小到 11
+        button.setTitle("钓鱼: 关", for: .normal)
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 11, weight: .bold)
         button.setTitleColor(.white, for: .normal)
-        button.backgroundColor = UIColor.black.withAlphaComponent(0.6)
-        button.layer.cornerRadius = 20
-        button.layer.borderWidth = 1.5
-        button.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
+        // 🚀 背景降低暗度及半透明度，更显高级，不挡游戏画面
+        button.backgroundColor = UIColor.black.withAlphaComponent(0.25)
+        button.layer.cornerRadius = 15
+        button.layer.borderWidth = 1.0
+        button.layer.borderColor = UIColor.white.withAlphaComponent(0.2).cgColor
         
         let blurEffect = UIBlurEffect(style: .dark)
         let blurView = UIVisualEffectView(effect: blurEffect)
         blurView.frame = button.bounds
-        blurView.layer.cornerRadius = 20
+        blurView.layer.cornerRadius = 15
         blurView.clipsToBounds = true
         blurView.isUserInteractionEnabled = false
         button.insertSubview(blurView, at: 0)
@@ -313,7 +316,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePanGesture(_:)))
         button.addGestureRecognizer(panGesture)
         
-        // 初始状态下按钮隐蔽隐藏，等登录成功后再显现
+        // 初始状态下按钮隐蔽隐藏，等登录成功后再显现，默认只给 0.5 的低调透明度
         button.isHidden = true
         button.alpha = 0.0
         
@@ -328,7 +331,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         
         var newCenter = CGPoint(x: button.center.x + translation.x, y: button.center.y + translation.y)
         
-        let margin: CGFloat = 16
+        let margin: CGFloat = 12
         let minX = margin + button.frame.width / 2
         let maxX = self.view.bounds.width - margin - button.frame.width / 2
         let minY = 60.0 + button.frame.height / 2 // 避开顶部状态栏和灵动岛区域
@@ -340,7 +343,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         button.center = newCenter
         gesture.setTranslation(.zero, in: self.view)
         
-        // 拖动时临时断开自动约束定位
         button.autoresizingMask = []
     }
     
@@ -360,8 +362,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                     } else {
                         print("【外壳控制】已停止后台钓鱼。")
                     }
-                    self.forgeButton.setTitle("后台钓鱼: 关", for: .normal)
-                    self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
+                    self.forgeButton.setTitle("钓鱼: 关", for: .normal)
+                    self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.2).cgColor
+                    // 🚀 关状态：降级到 0.5 极低透明度，防止视觉疲劳
+                    UIView.animate(withDuration: 0.3) {
+                        self.forgeButton.alpha = 0.5
+                    }
                 }
             } else {
                 // 状态2：当前未挂机，用户点击按钮表示要【开启】
@@ -390,12 +396,19 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
             if let error = error {
                 print("【外壳控制】启动后台钓鱼失败: \(error.localizedDescription)")
                 self.isForging = false
-                self.forgeButton.setTitle("后台钓鱼: 关", for: .normal)
-                self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
+                self.forgeButton.setTitle("钓鱼: 关", for: .normal)
+                self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.2).cgColor
+                UIView.animate(withDuration: 0.3) {
+                    self.forgeButton.alpha = 0.5
+                }
             } else {
                 print("【外壳控制】已开启后台钓鱼。")
-                self.forgeButton.setTitle("后台钓鱼: 开 🟢", for: .normal)
-                self.forgeButton.layer.borderColor = UIColor.green.cgColor
+                self.forgeButton.setTitle("钓鱼: 开 🟢", for: .normal)
+                self.forgeButton.layer.borderColor = UIColor.green.withAlphaComponent(0.6).cgColor
+                // 🚀 开状态：提高到 0.8 透明度，更清晰
+                UIView.animate(withDuration: 0.3) {
+                    self.forgeButton.alpha = 0.8
+                }
             }
         }
     }
@@ -424,7 +437,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         print("【网页加载】游戏网页加载/刷新完成。")
         self.isForging = false
-        self.forgeButton.setTitle("后台钓鱼: 关", for: .normal)
-        self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
+        self.forgeButton.setTitle("钓鱼: 关", for: .normal)
+        self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.2).cgColor
+        self.forgeButton.alpha = 0.5
     }
 }
