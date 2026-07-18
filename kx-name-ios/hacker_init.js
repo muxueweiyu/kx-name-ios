@@ -7,13 +7,12 @@
     // 1. 动态加载 Cocos 核心模块
     Promise.all([
         System.import('chunks:///_virtual/GameServer.ts'),
-        System.import('chunks:///_virtual/GameServerData.ts')
+        System.import('chunks:///_virtual/GameServerData.ts'),
+        System.import('chunks:///_virtual/LocaleData.ts')
     ]).then(function(modules) {
-        var mServer = modules[0];
-        var mData = modules[1];
-        
-        window.GameServer = mServer.GameServer;
-        window.GameServerData = mData.GameServerData;
+        window.GameServer = modules[0].GameServer;
+        window.GameServerData = modules[1].GameServerData;
+        window.LocaleData = modules[2].LocaleData;
         
         console.log("【注入成功】极简挂机环境已就绪！可以使用 window.batchSmartForge() 进行挂机。");
 
@@ -30,10 +29,24 @@
             window.isBatchForgeActive = true;
             
             var gs = window.GameServer.getInstance();
-            var count = batchCount || 10;
-            window.lastForgeCount = count;
+            var gd = window.GameServerData.getInstance();
             
-            console.log("【自动开箱/钓鱼】正在开启 " + count + " 次/个...");
+            // 3.1 动态边界检查：获取当前角色的实际体力，防止体力不足导致 10600 报错
+            var staminaId = window.LocaleData.getEvolutionRoot().staminaItemId;
+            var currentStamina = gd.getItemCountByProtoId(staminaId) || 0;
+            
+            if (currentStamina <= 0) {
+                console.warn("【自动开箱/钓鱼】当前体力为 0，暂停开箱，等待恢复...");
+                window.isForgePending = false; // 释放锁，允许下一次心跳重新检测
+                return;
+            }
+            
+            // 动态决定本次开箱数量：如果有 3 点体力，就只开 3 个，最多开 10 个
+            var targetCount = batchCount || 10;
+            var count = Math.min(currentStamina, targetCount);
+            window.lastForgeCount = targetCount;
+            
+            console.log("【自动开箱/钓鱼】当前体力: " + currentStamina + "，正在开启 " + count + " 次/个...");
             
             gs.send(function(res) {
                 if (!window.isBatchForgeActive) {
@@ -77,7 +90,7 @@
                 
                 var tasks = [];
                 
-                // 3.1. 穿戴比身上更好的装备
+                // 3.2 穿戴比身上更好的装备
                 Object.keys(toAttach).forEach(function(slot) {
                     var eq = toAttach[slot];
                     tasks.push(function(next) {
@@ -89,7 +102,7 @@
                     });
                 });
                 
-                // 3.2. 批量分解剩下的所有垃圾装备
+                // 3.3 批量分解剩下的所有垃圾装备
                 if (toBreakdown.length > 0) {
                     tasks.push(function(next) {
                         if (!window.isBatchForgeActive) return next();
