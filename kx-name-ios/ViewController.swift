@@ -214,8 +214,50 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
     private func startBackgroundWakeupTimer() {
         backgroundTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             DispatchQueue.main.async {
-                // 向 WebView 注入无害执行的 JS 代码，迫使系统唤醒 WebContent 子进程的 JS 引擎，以防止定时器深度休眠
-                self?.webView.evaluateJavaScript("if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.consoleLog) { window.webkit.messageHandlers.consoleLog.postMessage('[ACTIVE HEARTBEAT] Keep-Alive Tick'); }", completionHandler: nil)
+                guard let self = self else { return }
+                
+                // 12.1. 后台心跳维持并触发网页 autoPulse 驱动
+                self.webView.evaluateJavaScript("if (window.autoPulse) { window.autoPulse(); } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.consoleLog) { window.webkit.messageHandlers.consoleLog.postMessage('[ACTIVE HEARTBEAT] Keep-Alive Tick'); }", completionHandler: nil)
+                
+                // 12.2. 动态检测玩家是否已登录进入主界面，以此决定是否渐显显示悬浮挂机按钮
+                let checkLoginJS = """
+                (function() {
+                    try {
+                        if (typeof System !== 'undefined') {
+                            var m = System.get('chunks:///_virtual/GameServerData.ts');
+                            if (m && m.GameServerData && m.GameServerData.getInstance()) {
+                                var info = m.GameServerData.getInstance().fullInfo;
+                                return info ? true : false;
+                            }
+                        }
+                    } catch(e) {}
+                    return false;
+                })()
+                """
+                self.webView.evaluateJavaScript(checkLoginJS) { [weak self] (result, error) in
+                    guard let self = self, let button = self.forgeButton else { return }
+                    let isLoggedIn = (result as? Bool) ?? false
+                    
+                    if isLoggedIn {
+                        // 登录成功：如果当前是隐藏状态，执行渐显动画显示按钮
+                        if button.isHidden {
+                            button.isHidden = false
+                            button.alpha = 0.0
+                            UIView.animate(withDuration: 0.4) {
+                                button.alpha = 1.0
+                            }
+                        }
+                    } else {
+                        // 未登录或重连：如果当前是显示状态，执行渐隐动画隐藏按钮
+                        if !button.isHidden {
+                            UIView.animate(withDuration: 0.4, animations: {
+                                button.alpha = 0.0
+                            }) { _ in
+                                button.isHidden = true
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -267,55 +309,95 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         
         button.addTarget(self, action: #selector(toggleForge), for: .touchUpInside)
         
+        // 初始状态下按钮隐蔽隐藏，等登录成功后再显现
+        button.isHidden = true
+        button.alpha = 0.0
+        
         self.view.addSubview(button)
         self.forgeButton = button
     }
     
     @objc private func toggleForge() {
-        isForging = !isForging
-        if isForging {
-            webView.evaluateJavaScript("window.batchSmartForge(6)") { [weak self] (result, error) in
-                if let error = error {
-                    print("【外壳控制】启动智能开箱失败: \(error.localizedDescription)")
-                    self?.isForging = false
-                } else {
-                    print("【外壳控制】已开启智能开箱。")
-                    self?.forgeButton.setTitle("智能开箱: 开 🟢", for: .normal)
-                    self?.forgeButton.layer.borderColor = UIColor.green.cgColor
+        // 先检测网页中是否已经注入了我们的挂机函数
+        webView.evaluateJavaScript("typeof window.batchSmartForge !== 'undefined'") { [weak self] (result, error) in
+            guard let self = self else { return }
+            
+            let isAlreadyInjected = (result as? Bool) ?? false
+            
+            if self.isForging {
+                // 状态1：当前正在挂机中，用户点击按钮表示要【停止】
+                self.isForging = false
+                self.webView.evaluateJavaScript("window.stopBatchForge()") { (result, error) in
+                    if let error = error {
+                        print("【外壳控制】停止智能开箱失败: \(error.localizedDescription)")
+                    } else {
+                        print("【外壳控制】已停止智能开箱。")
+                    }
+                    self.forgeButton.setTitle("智能开箱: 关", for: .normal)
+                    self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
                 }
-            }
-        } else {
-            webView.evaluateJavaScript("window.stopBatchForge()") { [weak self] (result, error) in
-                if let error = error {
-                    print("【外壳控制】停止智能开箱失败: \(error.localizedDescription)")
+            } else {
+                // 状态2：当前未挂机，用户点击按钮表示要【开启】
+                self.isForging = true
+                
+                if isAlreadyInjected {
+                    // 如果已经注入过了，直接运行
+                    self.executeStartForge()
                 } else {
-                    print("【外壳控制】已停止智能开箱。")
+                    // 如果还没有注入过，先从 Bundle 加载并注入，然后再运行
+                    self.injectHackerJS { [weak self] success in
+                        if success {
+                            self?.executeStartForge()
+                        } else {
+                            self?.isForging = false
+                        }
+                    }
                 }
-                self?.forgeButton.setTitle("智能开箱: 关", for: .normal)
-                self?.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
             }
         }
     }
-
-    // 14. 网页加载完成代理：自动从 App Bundle 读取并注入 hacker_init.js 挂机代码
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        print("【网页加载】游戏主页加载完成，正在检索并注入 hacker_init.js...")
-        
+    
+    private func executeStartForge() {
+        webView.evaluateJavaScript("window.batchSmartForge(10)") { [weak self] (result, error) in
+            guard let self = self else { return }
+            if let error = error {
+                print("【外壳控制】启动智能开箱失败: \(error.localizedDescription)")
+                self.isForging = false
+                self.forgeButton.setTitle("智能开箱: 关", for: .normal)
+                self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
+            } else {
+                print("【外壳控制】已开启智能开箱。")
+                self.forgeButton.setTitle("智能开箱: 开 🟢", for: .normal)
+                self.forgeButton.layer.borderColor = UIColor.green.cgColor
+            }
+        }
+    }
+    
+    private func injectHackerJS(completion: @escaping (Bool) -> Void) {
+        print("【挂机初始化】检测到挂机脚本尚未注入，开始从 Bundle 读取 hacker_init.js...")
         if let filepath = Bundle.main.path(forResource: "hacker_init", ofType: "js"),
            let jsContent = try? String(contentsOfFile: filepath, encoding: .utf8) {
             
-            webView.evaluateJavaScript(jsContent) { [weak self] (result, error) in
+            webView.evaluateJavaScript(jsContent) { (result, error) in
                 if let error = error {
-                    print("【网页加载】hacker_init.js 注入失败: \(error.localizedDescription)")
+                    print("【挂机初始化】hacker_init.js 注入失败: \(error.localizedDescription)")
+                    completion(false)
                 } else {
-                    print("【网页加载】hacker_init.js 注入成功！")
+                    print("【挂机初始化】hacker_init.js 注入成功！")
+                    completion(true)
                 }
-                self?.isForging = false
-                self?.forgeButton.setTitle("智能开箱: 关", for: .normal)
-                self?.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
             }
         } else {
-            print("⚠️【网页加载】未能在 Bundle 中找到 hacker_init.js 文件！请确保已将 hacker_init.js 拖入 Xcode 导航栏并勾选 Target Membership。")
+            print("⚠️【挂机初始化】未能在 Bundle 中找到 hacker_init.js 文件！请确保已将 hacker_init.js 拖入 Xcode 导航栏并勾选 Target Membership。")
+            completion(false)
         }
+    }
+
+    // 14. 网页加载完成代理：重载或首次打开时，仅重置按钮状态，不进行默认注入
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        print("【网页加载】游戏网页加载/刷新完成。")
+        self.isForging = false
+        self.forgeButton.setTitle("智能开箱: 关", for: .normal)
+        self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
     }
 }
