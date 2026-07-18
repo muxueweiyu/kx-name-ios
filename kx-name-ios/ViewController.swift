@@ -291,7 +291,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         button.frame = CGRect(x: self.view.bounds.width - 160, y: 60, width: 140, height: 40)
         button.autoresizingMask = [.flexibleLeftMargin, .flexibleBottomMargin]
         
-        button.setTitle("智能开箱: 关", for: .normal)
+        button.setTitle("后台钓鱼: 关", for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .bold)
         button.setTitleColor(.white, for: .normal)
         button.backgroundColor = UIColor.black.withAlphaComponent(0.6)
@@ -309,12 +309,39 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         
         button.addTarget(self, action: #selector(toggleForge), for: .touchUpInside)
         
+        // 🚀 添加拖拽手势，使按钮可以被任意拖动，防止遮挡游戏 UI
+        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePanGesture(_:)))
+        button.addGestureRecognizer(panGesture)
+        
         // 初始状态下按钮隐蔽隐藏，等登录成功后再显现
         button.isHidden = true
         button.alpha = 0.0
         
         self.view.addSubview(button)
         self.forgeButton = button
+    }
+    
+    // 🚀 手势拖拽回调：带有屏幕边缘限制，防止拖出屏幕之外
+    @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
+        guard let button = gesture.view as? UIButton else { return }
+        let translation = gesture.translation(in: self.view)
+        
+        var newCenter = CGPoint(x: button.center.x + translation.x, y: button.center.y + translation.y)
+        
+        let margin: CGFloat = 16
+        let minX = margin + button.frame.width / 2
+        let maxX = self.view.bounds.width - margin - button.frame.width / 2
+        let minY = 60.0 + button.frame.height / 2 // 避开顶部状态栏和灵动岛区域
+        let maxY = self.view.bounds.height - margin - button.frame.height / 2
+        
+        newCenter.x = max(minX, min(maxX, newCenter.x))
+        newCenter.y = max(minY, min(maxY, newCenter.y))
+        
+        button.center = newCenter
+        gesture.setTranslation(.zero, in: self.view)
+        
+        // 拖动时临时断开自动约束定位
+        button.autoresizingMask = []
     }
     
     @objc private func toggleForge() {
@@ -329,11 +356,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                 self.isForging = false
                 self.webView.evaluateJavaScript("window.stopBatchForge()") { (result, error) in
                     if let error = error {
-                        print("【外壳控制】停止智能开箱失败: \(error.localizedDescription)")
+                        print("【外壳控制】停止后台钓鱼失败: \(error.localizedDescription)")
                     } else {
-                        print("【外壳控制】已停止智能开箱。")
+                        print("【外壳控制】已停止后台钓鱼。")
                     }
-                    self.forgeButton.setTitle("智能开箱: 关", for: .normal)
+                    self.forgeButton.setTitle("后台钓鱼: 关", for: .normal)
                     self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
                 }
             } else {
@@ -361,13 +388,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         webView.evaluateJavaScript("window.batchSmartForge(1)") { [weak self] (result, error) in
             guard let self = self else { return }
             if let error = error {
-                print("【外壳控制】启动智能开箱失败: \(error.localizedDescription)")
+                print("【外壳控制】启动后台钓鱼失败: \(error.localizedDescription)")
                 self.isForging = false
-                self.forgeButton.setTitle("智能开箱: 关", for: .normal)
+                self.forgeButton.setTitle("后台钓鱼: 关", for: .normal)
                 self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
             } else {
-                print("【外壳控制】已开启智能开箱。")
-                self.forgeButton.setTitle("智能开箱: 开 🟢", for: .normal)
+                print("【外壳控制】已开启后台钓鱼。")
+                self.forgeButton.setTitle("后台钓鱼: 开 🟢", for: .normal)
                 self.forgeButton.layer.borderColor = UIColor.green.cgColor
             }
         }
@@ -397,7 +424,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         print("【网页加载】游戏网页加载/刷新完成。")
         self.isForging = false
-        self.forgeButton.setTitle("智能开箱: 关", for: .normal)
+        self.forgeButton.setTitle("后台钓鱼: 关", for: .normal)
         self.forgeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
     }
 }
