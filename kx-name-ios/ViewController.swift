@@ -12,6 +12,7 @@ import AVFoundation
 class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler {
     var webView: WKWebView!
     var audioPlayer: AVAudioPlayer?
+    var backgroundTimer: Timer?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -22,7 +23,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         // 2. 激活宿主 App 后台无声音频挂活
         setupBackgroundAudioLoop()
         
-        // 3. 创建并配置高性能 WKWebView 及其配置注入
+        // 3. 启动后台定时心跳注入，强行唤醒 WebContent 进程的 JS 引擎
+        startBackgroundWakeupTimer()
+        
+        // 4. 创建并配置高性能 WKWebView 及其配置注入
         let webConfiguration = WKWebViewConfiguration()
         webConfiguration.allowsInlineMediaPlayback = true // 允许网页内播放视频(广告)
         
@@ -30,7 +34,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         let contentController = WKUserContentController()
         contentController.add(self, name: "consoleLog")
         
-        // 注入双端自愈与网页 Web Audio 挂活脚本
+        // 注入双端自愈与网页 HTML5 Audio 挂活脚本
         let hijackJS = """
         (function() {
             // 🛡️ 高级原型链防护罩：彻底防范错误上报器在配置未载入时的 TypeError 爆栈
@@ -50,21 +54,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                 console.error('【外壳注入】高级原型链防护罩部署失败:', e);
             }
 
-            // 1. 网页 Web Audio API 挂活源：监听首次触碰激活，使 WebContent 进程免于后台挂起
+            // 1. 网页 HTML5 Audio 挂活源：监听首次触碰激活，使 WebContent 进程免于后台挂起
             function enableWebAudioBackgroundKeepAlive() {
                 try {
-                    var AudioContext = window.AudioContext || window.webkitAudioContext;
-                    if (!AudioContext) return;
-                    var ctx = new AudioContext();
-                    var osc = ctx.createOscillator();
-                    var gain = ctx.createGain();
-                    gain.gain.value = 0.0001; // 极微弱音量，几乎静音
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.start(0);
-                    console.log('【网页挂活】Web Audio API 挂活震荡器已成功激活！');
+                    var audio = new Audio();
+                    audio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA";
+                    audio.loop = true;
+                    audio.volume = 0.0001; // 极微弱音量
+                    audio.play().then(function() {
+                        console.log('【网页挂活】HTML5 Audio 极简静音音频循环播放成功！');
+                    }).catch(function(e) {
+                        console.error('【网页挂活】HTML5 Audio 播放失败:', e);
+                    });
                 } catch(e) {
-                    console.error('【网页挂活】激活 Web Audio 失败:', e);
+                    console.error('【网页挂活】HTML5 Audio 初始化失败:', e);
                 }
             }
             window.addEventListener('touchstart', enableWebAudioBackgroundKeepAlive, { once: true, capture: true });
@@ -116,7 +119,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                 oldSend.apply(this, arguments);
             };
             
-            // 4. 劫持并监听 Fetch (检测非 ok 状态和捕获网络异常)
+            // 4. 劫持并监听 Fetch (检测非 ok 状态 and 捕获网络异常)
             var oldFetch = window.fetch;
             if (oldFetch) {
                 window.fetch = function(input, init) {
@@ -142,34 +145,34 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         contentController.addUserScript(userScript)
         webConfiguration.userContentController = contentController
         
-        // 4. 实例化全屏浏览器窗口 (自适应安全区域)
+        // 5. 实例化全屏浏览器窗口 (自适应安全区域)
         webView = WKWebView(frame: self.view.bounds, configuration: webConfiguration)
         webView.navigationDelegate = self
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         
-        // 5. 将浏览器加入界面
+        // 6. 将浏览器加入界面
         self.view.addSubview(webView)
         
-        // 6. 载入游戏网页地址
+        // 7. 载入游戏网页地址
         if let url = URL(string: "http://kx.hdhive.com/") {
             let request = URLRequest(url: url)
             webView.load(request)
         }
     }
     
-    // 7. 隐藏状态栏
+    // 8. 隐藏状态栏
     override var prefersStatusBarHidden: Bool {
         return true
     }
     
-    // 8. 接收来自网页 JavaScript 转发过来的日志并打印在 Xcode 终端
+    // 9. 接收来自网页 JavaScript 转发过来的日志并打印在 Xcode 终端
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "consoleLog", let logString = message.body as? String {
             print("📱 [JS Console] \(logString)")
         }
     }
     
-    // 9. 处理网页主框架加载失败
+    // 10. 处理网页主框架加载失败
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         print("【网络监控】主网页初步加载失败: \(error.localizedDescription)，3秒后自动尝试重新连接...")
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
@@ -184,7 +187,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         }
     }
     
-    // 10. 🛡️ 宿主 App 无音轨 WAV 后台挂活
+    // 11. 🛡️ 宿主 App 无音轨 WAV 后台挂活
     private func setupBackgroundAudioLoop() {
         do {
             let session = AVAudioSession.sharedInstance()
@@ -201,6 +204,16 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
             print("【系统挂活】宿主音频环路启动成功。")
         } catch {
             print("【系统挂活】音频挂活初始化失败: \(error.localizedDescription)")
+        }
+    }
+    
+    // 12. 🛡️ 宿主后台主动定时心跳注入，强行驱动 WebKit 引擎
+    private func startBackgroundWakeupTimer() {
+        backgroundTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                // 向 WebView 注入无害执行的 JS 代码，迫使系统唤醒 WebContent 子进程的 JS 引擎，以防止定时器深度休眠
+                self?.webView.evaluateJavaScript("if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.consoleLog) { window.webkit.messageHandlers.consoleLog.postMessage('[ACTIVE HEARTBEAT] Keep-Alive Tick'); }", completionHandler: nil)
+            }
         }
     }
     
